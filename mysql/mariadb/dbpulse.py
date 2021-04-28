@@ -4,7 +4,8 @@ import time
 import uuid
 
 def loop(conn):
-    conn1 = pool.get_connection()
+    conn1 = conn.get_connection()
+    conn1.auto_reconnect = True
 
     db = conn1.cursor()
 
