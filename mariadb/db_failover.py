@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 MariaDB Connection Pool Failover Example.
 
