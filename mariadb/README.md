@@ -28,15 +28,15 @@ This creates a file named `mariadb_failover_bundle.tar.gz`.
 Use a USB drive, `scp`, or your preferred internal transfer method to move `mariadb_failover_bundle.tar.gz` to the offline server.
 
 ### 3. Install on the Offline System
-Once the file is on the target server:
+Since the bundle now contains a **pre-compiled binary wheel** (built via Podman/Rocky9), you do **not** need `gcc` or `devel` libraries on the target system. Standard Python 3 and `pip` are enough.
 
 ```bash
 # Extract the bundle
 tar -xzvf mariadb_failover_bundle.tar.gz
 cd deploy_mariadb
 
-# Install using the local wheels (no internet required)
-pip3 install --no-index --find-links=./wheels -r requirements.txt
+# Install (Zero compilation required)
+sudo ./install.sh
 ```
 
 ## Running the Example

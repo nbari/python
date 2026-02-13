@@ -1,41 +1,55 @@
 #!/bin/bash
-# Exit on any error
 set -e
-
-# Ensure we are running from the script's directory
 cd "$(dirname "$0")"
 
-# Create a clean deployment directory
 rm -rf deploy_mariadb
 mkdir -p deploy_mariadb/wheels
+mkdir -p deploy_mariadb/rpms
 
-# Copy the code and make it executable
+echo "Building MariaDB Bundle for RHEL 9 (with C-library upgrade)..."
+podman run --rm \
+    -v "$(pwd)/deploy_mariadb/wheels:/output_wheels:Z" \
+    -v "$(pwd)/deploy_mariadb/rpms:/output_rpms:Z" \
+    rockylinux:9 bash -c "
+    echo 'Installing tools...'
+    dnf install -y --allowerasing curl gcc python3-devel python3-pip dnf-plugins-core
+    
+    echo 'Adding official MariaDB repository...'
+    curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | bash -s -- --skip-maxscale
+    
+    echo 'Downloading MariaDB C-Connector RPMs for upgrade...'
+    # Use dnf download (provided by dnf-plugins-core)
+    dnf download -y --destdir=/output_rpms MariaDB-shared MariaDB-common
+    
+    echo 'Installing MariaDB-devel for build...'
+    dnf install -y MariaDB-devel
+    
+    echo 'Building wheel...'
+    pip3 wheel mariadb -w /output_wheels
+"
+
+echo "Downloading dependencies..."
+pip3 download -d ./deploy_mariadb/wheels packaging
+
 cp db_failover.py deploy_mariadb/
 chmod +x deploy_mariadb/db_failover.py
-cp requirements.txt deploy_mariadb/
 
-echo "Downloading dependencies for RedHat 9 (Python 3.9)..."
-# We add --implementation and --abi to be extremely specific for RHEL 9
-# manylinux_2_28 is also highly compatible with RHEL 9 (glibc 2.34)
-pip download \
-    --only-binary=:all: \
-    --platform manylinux_2_28_x86_64 \
-    --implementation cp \
-    --python-version 3.9 \
-    --abi cp39 \
-    -d ./deploy_mariadb/wheels \
-    -r requirements.txt
+cat << 'EOF' > deploy_mariadb/install.sh
+#!/bin/bash
+set -e
+echo "1. Upgrading MariaDB C-Library to compatible version..."
+# Use --allowerasing to handle conflicts with the old system library
+sudo dnf install -y --allowerasing ./rpms/MariaDB-*.rpm
 
-# Verify that wheels were actually downloaded
-if [ "$(ls -A deploy_mariadb/wheels)" = "" ]; then
-    echo "ERROR: No wheels were downloaded. Check your internet connection or pip version."
-    exit 1
-fi
+echo "2. Installing MariaDB Python connector..."
+pip3 install --no-index --find-links=./wheels mariadb packaging
 
-# Create a single archive for transfer
+echo "Done! The system now has the correct C-library and Python connector."
+echo "Run with: ./db_failover.py"
+EOF
+chmod +x deploy_mariadb/install.sh
+
 tar -czvf mariadb_failover_bundle.tar.gz deploy_mariadb
-
 echo "----------------------------------------------------------"
 echo "Bundle created: mariadb_failover_bundle.tar.gz"
-echo "Wheels included: $(ls deploy_mariadb/wheels | wc -l)"
-echo "Done! Transfer the .tar.gz to the target system."
+echo "----------------------------------------------------------"
